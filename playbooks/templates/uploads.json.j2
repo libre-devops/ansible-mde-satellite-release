@@ -1,0 +1,7 @@
+{#- satellite_content_upload_uploads for __release_target, from the manifest. -#}
+[
+{%- for package in __release_manifest.packages -%}
+{%- set repository = __release_target.repositories[package.label] -%}
+{{ {'product': repository.product, 'repository': repository.repository, 'files': [package.path]} | to_json }}{{ ',' if not loop.last }}
+{%- endfor -%}
+]

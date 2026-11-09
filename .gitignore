@@ -1,0 +1,18 @@
+# Python and tooling
+.venv/
+__pycache__/
+.cache/
+.ansible/
+*.retry
+
+# Editors
+.idea/
+.vscode/
+
+# Your inventory, credentials and everything the stages download or write. Only the example
+# inventory is committed.
+inventory/*
+!inventory/example/
+artifacts/
+*.rpm
+.vault_pass*

@@ -1,0 +1,6 @@
+---
+# Copy to vault.yml in your inventory/local/group_vars/all, fill in, then encrypt it:
+#   ansible-vault encrypt inventory/local/group_vars/all/vault.yml
+vault_release_test_satellite_password: change-me
+vault_release_prod_satellite_password: change-me
+vault_release_aria_refresh_token: change-me

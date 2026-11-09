@@ -1,0 +1,19 @@
+---
+# Stage 4: add your SSH key to the test VMs, so later stages use the key instead of the build
+# password. Run it once per new VM, with the password in an encrypted vault.yml next to
+# group_vars/release_test/connection.yml (see that file), then delete the password.
+#
+#   just bootstrap --ask-vault-pass
+- name: Bootstrap SSH on the test VMs
+  hosts: release_test
+  become: true
+  gather_facts: true
+  roles:
+    - role: release
+    - role: libre_devops.ssh_bootstrap
+      vars:
+        ssh_bootstrap_authorized_keys:
+          - user: "{{ ansible_user | default('root') }}"
+            key_files: "{{ release_bootstrap_key_files }}"
+        # Test VMs only need the key: leave their sshd configuration as it was built.
+        ssh_bootstrap_sshd_settings: {}

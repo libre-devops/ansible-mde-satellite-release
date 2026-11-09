@@ -1,0 +1,32 @@
+---
+# The roles and collections the playbooks use. Pin the roles to release tags once they are
+# published; until then they track main.
+roles:
+  - name: libre_devops.rpm_repo_download
+    src: https://github.com/libre-devops/ansible-role-rpm-repo-download.git
+    scm: git
+    version: main
+  - name: libre_devops.satellite_content_upload
+    src: https://github.com/libre-devops/ansible-role-satellite-content-upload.git
+    scm: git
+    version: main
+  - name: libre_devops.aria_automation_deployment
+    src: https://github.com/libre-devops/ansible-role-aria-automation-deployment.git
+    scm: git
+    version: main
+  - name: libre_devops.ssh_bootstrap
+    src: https://github.com/libre-devops/ansible-role-ssh-bootstrap.git
+    scm: git
+    version: main
+  - name: libre_devops.mde_linux
+    src: https://github.com/libre-devops/ansible-role-mde-linux.git
+    scm: git
+    version: main
+
+collections:
+  - name: theforeman.foreman
+    version: ">=5.0.0,<7.0.0"
+  - name: ansible.posix
+    version: ">=1.6.0,<3.0.0"
+  - name: community.general
+    version: ">=10.0.0,<12.0.0"

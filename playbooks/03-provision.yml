@@ -1,0 +1,24 @@
+---
+# Stage 3 (optional): build one test VM per entry in release_aria_deployments from an Aria
+# Automation catalog item, and write them to release-test-vms.yml in your inventory, in the
+# release_test group. No credentials are written: add them yourself (see
+# group_vars/release_test/connection.yml), then run the bootstrap stage. Running it again
+# reuses the deployments that already exist.
+#
+#   just provision --ask-vault-pass
+- name: Build the test VMs in Aria Automation
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Request the deployments and write the inventory
+      ansible.builtin.include_tasks: tasks/aria.yml
+      vars:
+        __release_aria_state: present
+
+    - name: Say what to do next
+      ansible.builtin.debug:
+        msg: >-
+          The test VMs are in {{ release_aria_inventory_file }}. Add the build password to an
+          encrypted vault.yml in group_vars/release_test, run just bootstrap, then delete it.

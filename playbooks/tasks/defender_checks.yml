@@ -1,0 +1,153 @@
+---
+# Defender checks on an onboarded test VM. Each check adds {name, passed, detail} to
+# __release_checks instead of stopping the play, so the report shows every result. Only
+# documented mdatp health fields are read
+# (https://learn.microsoft.com/en-us/defender-endpoint/health-status).
+
+- name: Update the security intelligence
+  ansible.builtin.command:
+    cmd: mdatp definitions update
+  register: __release_check_update
+  changed_when: __release_check_update.rc == 0
+  failed_when: false
+  timeout: "{{ release_test_command_timeout }}"
+  when: "'definitions' in release_test_checks"
+
+- name: Wait for the security intelligence to be up to date
+  ansible.builtin.command:
+    cmd: mdatp health --field definitions_status
+  register: __release_check_definitions
+  changed_when: false
+  failed_when: false
+  retries: "{{ release_test_retries }}"
+  delay: "{{ release_test_delay }}"
+  until: __release_check_definitions.stdout | default('') | replace('"', '') | trim == 'up_to_date'
+  when: "'definitions' in release_test_checks"
+
+- name: Record the security intelligence check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'Security intelligence up to date',
+           'passed': __release_check_definitions.stdout | default('') | replace('"', '') | trim == 'up_to_date',
+           'detail': 'definitions_status: ' ~ (__release_check_definitions.stdout | default('') | replace('"', '') | trim)
+         }] }}
+  when: "'definitions' in release_test_checks"
+
+- name: Read the antivirus engine state
+  ansible.builtin.command:
+    cmd: mdatp health --field engine_load_status
+  register: __release_check_engine
+  changed_when: false
+  failed_when: false
+  when: "'engine' in release_test_checks"
+
+- name: Record the antivirus engine check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'Antivirus engine loaded',
+           'passed': __release_check_engine.stdout | default('') is search('succeeded'),
+           'detail': 'engine_load_status: ' ~ (__release_check_engine.stdout | default('') | replace('"', '') | trim)
+         }] }}
+  when: "'engine' in release_test_checks"
+
+- name: Read the real-time protection state
+  ansible.builtin.command:
+    cmd: mdatp health --field {{ item }}
+  register: __release_check_rtp
+  changed_when: false
+  failed_when: false
+  loop:
+    - real_time_protection_enabled
+    - real_time_protection_available
+  when: "'real_time_protection' in release_test_checks"
+
+- name: Record the real-time protection check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'Real-time protection enabled and available',
+           'passed': __release_check_rtp.results | map(attribute='stdout') | map('trim') | list == ['true', 'true'],
+           'detail': 'enabled: ' ~ (__release_check_rtp.results[0].stdout | trim) ~ ', available: ' ~ (__release_check_rtp.results[1].stdout | trim)
+         }] }}
+  when: "'real_time_protection' in release_test_checks"
+
+- name: Run a quick scan
+  ansible.builtin.command:
+    cmd: mdatp scan quick
+  register: __release_check_scan
+  changed_when: false
+  failed_when: false
+  timeout: "{{ release_test_command_timeout }}"
+  when: "'quick_scan' in release_test_checks"
+
+- name: Record the quick scan check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'Quick scan completes',
+           'passed': __release_check_scan.rc | default(1) == 0,
+           'detail': (__release_check_scan.stdout_lines | default([]) | last | default(__release_check_scan.msg | default('')))
+         }] }}
+  when: "'quick_scan' in release_test_checks"
+
+# The EICAR test file is the industry's harmless antivirus test. It is put together here from
+# two halves, so no file in this repository holds the whole string and no scanner quarantines
+# the repository. With real-time protection on, Defender removes the file within seconds and
+# raises an EICAR alert in the tenant: that alert is expected.
+- name: Write the EICAR test file
+  ansible.builtin.copy:
+    dest: "{{ release_test_eicar_path }}"
+    content: "{{ __release_eicar_first_half ~ __release_eicar_second_half }}"
+    mode: "0644"
+  vars:
+    __release_eicar_first_half: 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-'
+    __release_eicar_second_half: 'ANTIVIRUS-TEST-FILE!$H+H*'
+  failed_when: false
+  when: "'eicar' in release_test_checks"
+
+- name: Wait for Defender to remove the EICAR test file
+  ansible.builtin.stat:
+    path: "{{ release_test_eicar_path }}"
+    get_checksum: false
+  register: __release_check_eicar
+  retries: "{{ release_test_retries }}"
+  delay: "{{ release_test_delay }}"
+  until: not __release_check_eicar.stat.exists
+  failed_when: false
+  when: "'eicar' in release_test_checks"
+
+- name: Record the EICAR check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'EICAR test file detected and removed',
+           'passed': not __release_check_eicar.stat.exists,
+           'detail': 'removed' if not __release_check_eicar.stat.exists else 'still present after ' ~ (release_test_retries * release_test_delay) ~ ' seconds'
+         }] }}
+  when: "'eicar' in release_test_checks"
+
+- name: Remove the EICAR test file if it is still there
+  ansible.builtin.file:
+    path: "{{ release_test_eicar_path }}"
+    state: absent
+  when: "'eicar' in release_test_checks"
+
+- name: Read the health issues
+  ansible.builtin.command:
+    cmd: mdatp health --field health_issues
+  register: __release_check_issues
+  changed_when: false
+  failed_when: false
+  when: "'health_issues' in release_test_checks"
+
+- name: Record the health issues check
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [{
+           'name': 'No health issues',
+           'passed': __release_check_issues.stdout | default('') | trim in ['[]', ''] and __release_check_issues.rc | default(1) == 0,
+           'detail': 'health_issues: ' ~ (__release_check_issues.stdout | default('') | trim)
+         }] }}
+  when: "'health_issues' in release_test_checks"

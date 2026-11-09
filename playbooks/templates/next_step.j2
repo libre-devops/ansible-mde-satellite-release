@@ -1,0 +1,14 @@
+{#- What to run next, from the stages recorded in the manifest. -#}
+{%- set stages = __release_manifest.stages -%}
+{%- set results = (__release_manifest.details.tested.results | default({})).values() | list -%}
+{%- if 'released' in stages -%}
+Done. The next release starts with: just download
+{%- elif 'tested' in stages and results | length > 0 and results | rejectattr('passed') | list | length == 0 -%}
+just release
+{%- elif 'tested' in stages -%}
+Fix the failures in {{ release_test_report }}, then: just test
+{%- elif 'staged' in stages -%}
+Build the test VMs (or: just provision), add them to the inventory, then: just bootstrap, then: just test
+{%- else -%}
+just stage
+{%- endif -%}

@@ -1,0 +1,23 @@
+---
+# Loads artifacts/manifest.json into __release_manifest and checks it is complete.
+- name: Read the manifest
+  ansible.builtin.slurp:
+    src: "{{ release_manifest }}"
+  register: __release_manifest_file
+  failed_when: false
+
+- name: Stop if there is no manifest
+  ansible.builtin.assert:
+    that:
+      - __release_manifest_file.content is defined
+    fail_msg: "{{ release_manifest }} does not exist. Run the download stage first: just download"
+    quiet: true
+
+- name: Note the manifest and a description of the release
+  ansible.builtin.set_fact:
+    __release_manifest: "{{ __release_manifest_file.content | b64decode | from_json }}"
+    __release_description: >-
+      {{ (__release_manifest_file.content | b64decode | from_json).package }}
+      {{ (__release_manifest_file.content | b64decode | from_json).packages | map(attribute='version') | unique | join(', ') }}
+      ({{ (__release_manifest_file.content | b64decode | from_json).packages | map(attribute='label') | join(', ') }}),
+      released with ansible-mde-satellite-release

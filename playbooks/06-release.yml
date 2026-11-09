@@ -1,0 +1,123 @@
+---
+# Stage 6: release to production. Refuses unless the test report shows every RHEL version in
+# the manifest passed on at least one VM with the manifest's version, then asks you to type
+# the version to confirm (or pass -e release_confirm=<version> in a pipeline). Then, by
+# release_mode, uploads the same files to release_prod_satellite or promotes the content views
+# on release_test_satellite.
+#
+#   just release
+- name: Release to production
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Read the manifest
+      ansible.builtin.include_tasks: tasks/read_manifest.yml
+
+    - name: Read the test report
+      ansible.builtin.set_fact:
+        __release_report: "{{ lookup('ansible.builtin.file', release_test_report, errors='ignore') | default('{}', true) | from_json }}"
+
+    - name: Work out which RHEL versions passed testing with this release
+      vars:
+        __release_evrs: >-
+          {{ __release_manifest.packages | map(attribute='version')
+             | zip(__release_manifest.packages | map(attribute='release')) | map('join', '-') | list }}
+      ansible.builtin.set_fact:
+        __release_passed_labels: >-
+          {{ (__release_report.results | default({})).values()
+             | selectattr('passed') | selectattr('version', 'in', __release_evrs)
+             | map(attribute='label') | unique | list }}
+
+    - name: Stop unless every RHEL version passed
+      ansible.builtin.assert:
+        that:
+          - (__release_manifest.packages | map(attribute='label') | difference(__release_passed_labels)) | length == 0
+        fail_msg: >-
+          No passing test for {{ __release_manifest.packages | map(attribute='label') | difference(__release_passed_labels) | join(', ') }}
+          with this release. Run the test stage (just test) first. Override with
+          -e release_skip_test_check=true only if you have tested another way.
+        quiet: true
+      when: not release_skip_test_check | bool
+
+    - name: Ask for confirmation
+      ansible.builtin.pause:
+        prompt: >-
+
+          About to release {{ __release_description }} to production by {{ release_mode }}
+          ({{ release_prod_satellite.server_url if release_mode == 'upload' else release_test_satellite.server_url }}).
+          Type the version ({{ __release_manifest.packages | map(attribute='version') | unique | join(', ') }}) to go ahead
+      register: __release_prompt
+      when: release_confirm | length == 0
+
+    - name: Stop unless the version was confirmed
+      ansible.builtin.assert:
+        that:
+          - (release_confirm if release_confirm | length > 0 else __release_prompt.user_input | default('') | trim)
+            in __release_manifest.packages | map(attribute='version') | list
+        fail_msg: Not confirmed, nothing was released.
+        quiet: true
+
+    - name: Upload to the production Satellite
+      when: release_mode == 'upload'
+      block:
+        - name: Check the production Satellite has a repository for every RHEL version
+          ansible.builtin.include_tasks: tasks/check_targets.yml
+          vars:
+            __release_target: "{{ release_prod_satellite }}"
+
+        - name: Upload, publish and promote
+          ansible.builtin.include_role:
+            name: libre_devops.satellite_content_upload
+          vars:
+            __release_target: "{{ release_prod_satellite }}"
+            satellite_content_upload_server_url: "{{ __release_target.server_url }}"
+            satellite_content_upload_username: "{{ __release_target.username | default('') }}"
+            satellite_content_upload_password: "{{ __release_target.password | default('') }}"
+            satellite_content_upload_validate_certs: "{{ __release_target.validate_certs | default(true) }}"
+            satellite_content_upload_ca_path: "{{ __release_target.ca_path | default('') }}"
+            satellite_content_upload_organization: "{{ __release_target.organization }}"
+            satellite_content_upload_uploads: "{{ lookup('ansible.builtin.template', 'templates/uploads.json.j2') | from_json }}"
+            satellite_content_upload_content_views: "{{ __release_target.content_views | default([]) }}"
+            satellite_content_upload_publish_description: >-
+              {{ __release_description | trim }}. Tested {{ __release_report.tested | default('not tested') }}:
+              {{ __release_passed_labels | join(', ') or 'no test results' }} passed.
+
+    - name: Promote on the test Satellite
+      ansible.builtin.include_role:
+        name: libre_devops.satellite_content_upload
+        tasks_from: promote
+      vars:
+        __release_target: "{{ release_test_satellite }}"
+        satellite_content_upload_server_url: "{{ __release_target.server_url }}"
+        satellite_content_upload_username: "{{ __release_target.username | default('') }}"
+        satellite_content_upload_password: "{{ __release_target.password | default('') }}"
+        satellite_content_upload_validate_certs: "{{ __release_target.validate_certs | default(true) }}"
+        satellite_content_upload_ca_path: "{{ __release_target.ca_path | default('') }}"
+        satellite_content_upload_organization: "{{ __release_target.organization }}"
+        satellite_content_upload_promotions: "{{ release_promotions }}"
+      when: release_mode == 'promote'
+
+    - name: Note when and where the release went
+      ansible.builtin.set_fact:
+        __release_released_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+        __release_target_url: "{{ release_prod_satellite.server_url if release_mode == 'upload' else release_test_satellite.server_url }}"
+
+    - name: Record the release in the manifest
+      ansible.builtin.include_tasks: tasks/write_manifest.yml
+      vars:
+        __release_stage: released
+        __release_stage_details:
+          mode: "{{ release_mode }}"
+          target: "{{ __release_target_url }}"
+
+    - name: Write artifacts/release-report.md
+      ansible.builtin.template:
+        src: templates/release-report.md.j2
+        dest: "{{ release_report_markdown }}"
+        mode: "0644"
+
+    - name: Say where the report is
+      ansible.builtin.debug:
+        msg: "Released. Attach {{ release_report_markdown }} and {{ release_test_report_markdown }} to your change record."

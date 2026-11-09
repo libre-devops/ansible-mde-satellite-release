@@ -1,0 +1,11 @@
+---
+# Records a stage (__release_stage) in the manifest with the time, and optional details
+# (__release_stage_details), keeping everything else.
+- name: Record the stage in the manifest
+  ansible.builtin.copy:
+    dest: "{{ release_manifest }}"
+    mode: "0644"
+    content: >-
+      {{ __release_manifest | combine({'stages': {__release_stage: now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ')}}, recursive=true)
+         | combine({'details': {__release_stage: __release_stage_details}} if __release_stage_details is defined else {}, recursive=true)
+         | to_nice_json(indent=2) }}

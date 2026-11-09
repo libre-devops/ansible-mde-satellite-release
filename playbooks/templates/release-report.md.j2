@@ -1,0 +1,32 @@
+# Release report: {{ __release_description | trim }}
+
+| | |
+|---|---|
+| Package | `{{ __release_manifest.package }}` |
+| Released | {{ __release_released_at }} by {{ lookup('ansible.builtin.env', 'USER') | default('unknown', true) }} |
+| How | {{ release_mode }} to {{ __release_target_url }} |
+| Downloaded | {{ __release_manifest.stages.downloaded | default('unknown') }} from {{ release_source_url }}, repository signature and checksums verified |
+| Staged | {{ __release_manifest.stages.staged | default('not recorded') }} on {{ release_test_satellite.server_url }} |
+| Tested | {{ __release_report.tested | default('not tested') }} |
+
+## Files
+
+| RHEL | File | SHA-256 | Source |
+|---|---|---|---|
+{% for package in __release_manifest.packages %}
+| {{ package.label }} | `{{ package.filename }}` | `{{ package.checksum | default('') }}` | {{ package.url | default('') }} |
+{% endfor %}
+
+## Test results
+
+{% if __release_report.results | default({}) | length > 0 %}
+| RHEL | Test VM | Version | Checks passed | Result |
+|---|---|---|---|---|
+{% for host, result in __release_report.results | dictsort %}
+| {{ result.label | default('?') }} | {{ host }} | {{ result.version | default('?') }} | {{ result.checks | default([]) | selectattr('passed') | list | length }} of {{ result.checks | default([]) | length }} | {{ 'Passed' if result.passed else 'FAILED: ' ~ result.message }} |
+{% endfor %}
+
+Full results: `test-report.md` and `test-report.json` next to this file.
+{% else %}
+No test results: released with release_skip_test_check.
+{% endif %}

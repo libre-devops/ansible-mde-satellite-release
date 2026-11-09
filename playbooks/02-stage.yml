@@ -1,0 +1,36 @@
+---
+# Stage 2: upload the downloaded RPMs to the test Satellite and publish and promote its
+# content views, so the test VMs can install them.
+- name: Stage the release on the test Satellite
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Read the manifest
+      ansible.builtin.include_tasks: tasks/read_manifest.yml
+
+    - name: Check the test Satellite has a repository for every RHEL version
+      ansible.builtin.include_tasks: tasks/check_targets.yml
+      vars:
+        __release_target: "{{ release_test_satellite }}"
+
+    - name: Upload to the test Satellite
+      ansible.builtin.include_role:
+        name: libre_devops.satellite_content_upload
+      vars:
+        __release_target: "{{ release_test_satellite }}"
+        satellite_content_upload_server_url: "{{ __release_target.server_url }}"
+        satellite_content_upload_username: "{{ __release_target.username | default('') }}"
+        satellite_content_upload_password: "{{ __release_target.password | default('') }}"
+        satellite_content_upload_validate_certs: "{{ __release_target.validate_certs | default(true) }}"
+        satellite_content_upload_ca_path: "{{ __release_target.ca_path | default('') }}"
+        satellite_content_upload_organization: "{{ __release_target.organization }}"
+        satellite_content_upload_uploads: "{{ lookup('ansible.builtin.template', 'templates/uploads.json.j2') | from_json }}"
+        satellite_content_upload_content_views: "{{ __release_target.content_views | default([]) }}"
+        satellite_content_upload_publish_description: "{{ __release_description }}"
+
+    - name: Record the stage in the manifest
+      ansible.builtin.include_tasks: tasks/write_manifest.yml
+      vars:
+        __release_stage: staged

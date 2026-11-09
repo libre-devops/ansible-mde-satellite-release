@@ -1,0 +1,10 @@
+---
+# How Ansible reaches the test VMs. For the first run of `just bootstrap`, put the password
+# the VM was built with in an encrypted vault.yml next to this file:
+#
+#   ansible_password: the-build-password
+#
+# Bootstrap adds your key to the VM, so delete that line afterwards and use the key.
+ansible_user: root
+ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+ansible_ssh_common_args: -o StrictHostKeyChecking=accept-new

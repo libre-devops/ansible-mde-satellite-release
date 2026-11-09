@@ -1,0 +1,56 @@
+---
+# Stage 1: pick the version and download it for every RHEL version, with the repository's
+# signature and each RPM's checksum verified, then start a new manifest.
+#
+#   just download                       # latest
+#   just download -e release_version=101.25092.0005
+- name: Download the release
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Read any manifest from an earlier release
+      ansible.builtin.slurp:
+        src: "{{ release_manifest }}"
+      register: __release_previous
+      failed_when: false
+
+    - name: Stop if an earlier release is still in progress
+      ansible.builtin.assert:
+        that:
+          - __release_previous.content is not defined
+            or (__release_previous.content | b64decode | from_json).stages.released is defined
+            or release_restart | bool
+        fail_msg: >-
+          {{ release_manifest }} holds a release that has not reached production yet
+          ({{ (__release_previous.content | b64decode | from_json).packages | map(attribute='filename') | join(', ') }}).
+          Finish it, or start again with -e release_restart=true.
+        quiet: true
+
+    - name: Download and verify the RPMs
+      ansible.builtin.include_role:
+        name: libre_devops.rpm_repo_download
+      vars:
+        rpm_repo_download_base_url: "{{ release_source_url }}"
+        rpm_repo_download_repositories: "{{ release_repositories }}"
+        rpm_repo_download_packages: ["{{ release_package }}"]
+        rpm_repo_download_version: "{{ release_version }}"
+        rpm_repo_download_dest: "{{ release_downloads_dir }}"
+
+    - name: Write a new manifest
+      ansible.builtin.copy:
+        dest: "{{ release_manifest }}"
+        mode: "0644"
+        content: >-
+          {{ {
+               'package': release_package,
+               'requested_version': release_version | string,
+               'packages': rpm_repo_download_results,
+               'stages': {'downloaded': now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ')}
+             } | to_nice_json(indent=2) }}
+
+    - name: Say what was downloaded
+      ansible.builtin.debug:
+        msg: >-
+          {{ rpm_repo_download_results | map(attribute='label') | zip(rpm_repo_download_results | map(attribute='filename')) | map('join', ': ') | list }}

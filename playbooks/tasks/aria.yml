@@ -1,0 +1,23 @@
+---
+# Runs libre_devops.aria_automation_deployment for release_aria_deployments with the given
+# state (__release_aria_state). Each deployment uses release_aria_catalog_item unless it names
+# its own catalog_item.
+- name: Run the Aria Automation role
+  ansible.builtin.include_role:
+    name: libre_devops.aria_automation_deployment
+  vars:
+    aria_automation_deployment_state: "{{ __release_aria_state }}"
+    aria_automation_deployment_url: "{{ release_aria_url }}"
+    aria_automation_deployment_validate_certs: "{{ release_aria_validate_certs }}"
+    aria_automation_deployment_refresh_token: "{{ release_aria_refresh_token }}"
+    aria_automation_deployment_username: "{{ release_aria_username }}"
+    aria_automation_deployment_password: "{{ release_aria_password }}"
+    aria_automation_deployment_domain: "{{ release_aria_domain }}"
+    aria_automation_deployment_project: "{{ release_aria_project }}"
+    aria_automation_deployment_reason: "{{ release_aria_reason }}"
+    aria_automation_deployment_deployments: "{{ lookup('ansible.builtin.template', 'templates/aria_deployments.json.j2') | from_json }}"
+    aria_automation_deployment_groups: [release_test]
+    aria_automation_deployment_host_name: "{{ release_aria_host_name }}"
+    aria_automation_deployment_host_vars: "{{ release_aria_host_vars }}"
+    aria_automation_deployment_inventory_file: "{{ release_aria_inventory_file }}"
+    aria_automation_deployment_wait_for_connection: false

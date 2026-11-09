@@ -1,0 +1,28 @@
+---
+# What `just bootstrap` installs on the test VMs.
+release_bootstrap_key_files:
+  - ~/.ssh/id_ed25519.pub
+
+# What `just test` does on them. Without an onboarding package it installs the exact version
+# and checks the package and service. With a test tenant's onboarding and offboarding packages
+# (both kept encrypted with ansible-vault) it also onboards each VM, runs the Defender checks
+# below, and offboards it again whatever the checks found.
+release_test_onboarding_file: ""   # for example files/test-tenant/mdatp_onboard.json
+release_test_offboarding_file: ""  # for example files/test-tenant/mdatp_offboard.json
+
+# The enforcement level the test VMs run with, so the real-time protection and EICAR checks
+# have something to test. Empty leaves whatever policy the VMs get.
+release_test_enforcement_level: real_time
+
+# Checks to run on onboarded VMs. Remove any you do not want.
+release_test_checks:
+  - definitions          # security intelligence updates and is up to date
+  - engine               # antivirus engine loaded
+  - real_time_protection # enabled and available
+  - quick_scan           # mdatp scan quick completes
+  - eicar                # the EICAR test file is detected and removed (raises an alert in the tenant)
+  - health_issues        # mdatp health reports no issues
+
+# Your own checks: a tasks file run on each VM after the built-in ones. Add results to
+# __release_checks as {name, passed, detail} to have them in the report.
+release_test_extra_tasks: ""

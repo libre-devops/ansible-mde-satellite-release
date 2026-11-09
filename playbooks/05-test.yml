@@ -1,0 +1,127 @@
+---
+# Stage 5: on each test VM, check the test Satellite offers exactly the version in the
+# manifest and install it. With a test tenant's onboarding package, also onboard it, run the
+# Defender checks (security intelligence, engine, real-time protection, quick scan, EICAR,
+# health issues) and offboard it again, whatever the checks found. Results go to
+# artifacts/test-report.json and test-report.md, which the release stage reads.
+#
+# The VMs must be registered to the test Satellite (or its lifecycle environment) that the
+# stage step published to.
+- name: Test the release on the test VMs
+  hosts: release_test
+  become: true
+  gather_facts: true
+  roles:
+    - role: release
+  vars:
+    __release_manifest: "{{ lookup('ansible.builtin.file', release_manifest) | from_json }}"
+    __release_label: "el{{ ansible_facts['distribution_major_version'] }}"
+    __release_expected: >-
+      {{ __release_manifest.packages | selectattr('label', 'equalto', __release_label) | first | default({}) }}
+    __release_evr: "{{ __release_expected.version | default('') }}-{{ __release_expected.release | default('') }}"
+    __release_onboard: "{{ release_test_onboarding_file | length > 0 }}"
+  tasks:
+    - name: Start with no results
+      ansible.builtin.set_fact:
+        __release_checks: []
+        __release_error: ""
+        __release_onboard_started: false
+        __release_offboarded: false
+
+    - name: Test, then offboard whatever happened
+      block:
+        - name: Install, onboard and check
+          ansible.builtin.include_tasks: tasks/test_vm.yml
+      rescue:
+        - name: Note what stopped the test
+          ansible.builtin.set_fact:
+            __release_error: "{{ ansible_failed_task.name | default('A task') }}: {{ ansible_failed_result.msg | default('failed') }}"
+      always:
+        - name: Offboard the test VM
+          when: __release_onboard_started | bool
+          block:
+            - name: Offboard with the test tenant's offboarding package
+              ansible.builtin.include_role:
+                name: libre_devops.mde_linux
+              vars:
+                mde_linux_state: offboarded
+                mde_linux_offboarding_file: "{{ release_test_offboarding_file }}"
+
+            - name: Note the VM is offboarded
+              ansible.builtin.set_fact:
+                __release_offboarded: true
+          rescue:
+            - name: Note the offboarding failure
+              ansible.builtin.set_fact:
+                __release_error: >-
+                  {{ (__release_error ~ ' ') if __release_error else '' }}Offboarding failed:
+                  {{ ansible_failed_result.msg | default('failed') }}. Offboard it in the portal before deleting it.
+
+        - name: Note the result
+          ansible.builtin.set_fact:
+            __release_result:
+              label: "{{ __release_label }}"
+              version: "{{ __release_evr }}"
+              onboarded: "{{ __release_onboard_started | bool }}"
+              offboarded: "{{ __release_offboarded | bool }}"
+              checks: "{{ __release_checks }}"
+              passed: >-
+                {{ __release_error | length == 0
+                   and __release_checks | length > 0
+                   and __release_checks | rejectattr('passed') | list | length == 0
+                   and (__release_offboarded | bool or not __release_onboard_started | bool) }}
+              message: >-
+                {{ __release_error if __release_error
+                   else ('Failed: ' ~ (__release_checks | rejectattr('passed') | map(attribute='name') | join(', ')))
+                   if __release_checks | rejectattr('passed') | list | length > 0
+                   else 'Passed' }}
+
+- name: Write the test report
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Read the manifest
+      ansible.builtin.include_tasks: tasks/read_manifest.yml
+
+    # A VM that was unreachable, or never got as far as the test, counts as failed.
+    - name: Write artifacts/test-report.json
+      ansible.builtin.copy:
+        dest: "{{ release_test_report }}"
+        mode: "0644"
+        content: >-
+          {%- set report = namespace(results={}) -%}
+          {%- for host in groups['release_test'] | default([]) -%}
+          {%- set report.results = report.results | combine({host: hostvars[host]['__release_result']
+                | default({'passed': false, 'message': 'Unreachable, or the test did not run'})}) -%}
+          {%- endfor -%}
+          {{ {'tested': now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ'), 'results': report.results} | to_nice_json(indent=2) }}
+
+    - name: Record the stage in the manifest
+      ansible.builtin.include_tasks: tasks/write_manifest.yml
+      vars:
+        __release_stage: tested
+        __release_stage_details: "{{ lookup('ansible.builtin.file', release_test_report) | from_json }}"
+
+    - name: Write artifacts/test-report.md
+      ansible.builtin.template:
+        src: templates/test-report.md.j2
+        dest: "{{ release_test_report_markdown }}"
+        mode: "0644"
+      vars:
+        __release_report: "{{ lookup('ansible.builtin.file', release_test_report) | from_json }}"
+
+    - name: Show the results
+      ansible.builtin.debug:
+        msg: >-
+          {{ (lookup('ansible.builtin.file', release_test_report) | from_json).results
+             | dict2items | map(attribute='key') | zip((lookup('ansible.builtin.file', release_test_report) | from_json).results
+             | dict2items | map(attribute='value') | map(attribute='message', default='?')) | map('join', ': ') | list }}
+
+    - name: Fail if any VM failed
+      ansible.builtin.assert:
+        that:
+          - (lookup('ansible.builtin.file', release_test_report) | from_json).results.values() | rejectattr('passed') | list | length == 0
+        fail_msg: Testing failed on at least one VM. See {{ release_test_report }}.
+        quiet: true

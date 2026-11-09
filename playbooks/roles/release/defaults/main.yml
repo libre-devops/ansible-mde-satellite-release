@@ -1,0 +1,64 @@
+---
+# Defaults for every stage. They live in a role because role defaults have the lowest
+# precedence: anything in your inventory (group_vars, host_vars) or on the command line wins.
+# Every stage play lists this role first.
+
+# Where the stages keep their files. The manifest records what each stage did, so later stages
+# work on exactly what the download stage fetched.
+release_artifacts_dir: "{{ playbook_dir }}/../artifacts"
+release_downloads_dir: "{{ release_artifacts_dir }}/downloads"
+release_manifest: "{{ release_artifacts_dir }}/manifest.json"
+release_test_report: "{{ release_artifacts_dir }}/test-report.json"
+release_test_report_markdown: "{{ release_artifacts_dir }}/test-report.md"
+release_report_markdown: "{{ release_artifacts_dir }}/release-report.md"
+
+# Download
+release_package: mdatp
+release_version: latest
+release_source_url: https://packages.microsoft.com
+release_restart: false
+
+# Test VMs. Without an onboarding package the test installs the release and checks the
+# package and service only. With one (from a test tenant) it onboards, runs the Defender
+# checks in release_test_checks, and offboards with release_test_offboarding_file.
+release_bootstrap_key_files:
+  - ~/.ssh/id_ed25519.pub
+release_test_onboarding_file: ""
+release_test_offboarding_file: ""
+release_test_verify_connectivity: true
+release_test_enforcement_level: real_time
+release_test_checks:
+  - definitions
+  - engine
+  - real_time_protection
+  - quick_scan
+  - eicar
+  - health_issues
+release_test_retries: 30
+release_test_delay: 10
+release_test_command_timeout: 1800
+release_test_eicar_path: /tmp/release-test-eicar.com
+release_test_extra_tasks: ""
+
+# Release
+release_mode: upload
+release_promotions: []
+release_confirm: ""
+release_skip_test_check: false
+
+# Aria Automation, for the provision and teardown stages.
+release_aria_validate_certs: true
+release_aria_refresh_token: ""
+release_aria_username: ""
+release_aria_password: ""
+release_aria_domain: ""
+release_aria_project: ""
+release_aria_catalog_item: ""
+release_aria_deployments: []
+release_aria_reason: Test VM for an mdatp release
+release_aria_inventory_file: "{{ inventory_dir }}/release-test-vms.yml"
+# How each machine appears in the inventory. resource is the machine as Aria Automation
+# returns it, so a custom property works too: "{{ resource.properties.myAddress }}".
+release_aria_host_name: "{{ resource.properties.resourceName | default(resource.name) }}"
+release_aria_host_vars:
+  ansible_host: "{{ resource.properties.address | default(resource.properties.resourceName | default(resource.name)) }}"

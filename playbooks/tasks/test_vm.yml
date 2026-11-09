@@ -1,0 +1,118 @@
+---
+# The test on one VM: install the release from Satellite, onboard to the test tenant, run the
+# Defender checks and any extra checks. Failures here stop the VM's test; individual Defender
+# checks only record a failed result. Offboarding happens in 05-test.yml, whatever happens here.
+
+- name: Check this VM's RHEL version is in the release
+  ansible.builtin.assert:
+    that:
+      - __release_expected | length > 0
+    fail_msg: >-
+      This VM runs {{ __release_label }}, but the manifest only has
+      {{ __release_manifest.packages | map(attribute='label') | join(', ') }}.
+    quiet: true
+
+- name: Check onboarding comes with offboarding
+  ansible.builtin.assert:
+    that:
+      - release_test_offboarding_file | length > 0
+    fail_msg: >-
+      release_test_onboarding_file is set but release_test_offboarding_file is not. Give both,
+      so the test VM leaves the tenant before it is deleted.
+    quiet: true
+  when: __release_onboard | bool
+
+- name: Refresh the package metadata from Satellite
+  ansible.builtin.command:
+    cmd: "{{ 'yum' if ansible_facts['pkg_mgr'] == 'yum' else 'dnf' }} -y -q makecache"
+  changed_when: false
+
+- name: List the versions Satellite offers
+  ansible.builtin.command:
+    argv:
+      - "{{ 'yum' if ansible_facts['pkg_mgr'] == 'yum' else 'dnf' }}"
+      - -q
+      - list
+      - --showduplicates
+      - "{{ __release_manifest.package }}"
+  register: __release_available
+  changed_when: false
+  failed_when: false
+
+- name: Check Satellite offers the version being released
+  ansible.builtin.assert:
+    that:
+      - __release_available.stdout is search(__release_evr | regex_escape)
+    fail_msg: >-
+      The repositories on this VM do not offer {{ __release_manifest.package }}
+      {{ __release_evr }}. Is the VM registered to the test Satellite and its test lifecycle
+      environment, and did the stage step publish? Offered:
+      {{ __release_available.stdout_lines | select('search', __release_manifest.package) | list }}
+    quiet: true
+
+- name: Read the installed packages before the test
+  ansible.builtin.package_facts:
+
+- name: Note the version installed before the test
+  ansible.builtin.set_fact:
+    __release_before: >-
+      {{ (ansible_facts.packages[__release_manifest.package] | default([{}]) | first).version | default('') ~ '-'
+         ~ (ansible_facts.packages[__release_manifest.package] | default([{}]) | first).release | default('') }}
+
+# Set before the role runs, so the VM is offboarded even if onboarding fails half way.
+- name: Note that onboarding is about to start
+  ansible.builtin.set_fact:
+    __release_onboard_started: "{{ __release_onboard | bool }}"
+
+- name: Install the release, and onboard and check it with a test onboarding package
+  ansible.builtin.include_role:
+    name: libre_devops.mde_linux
+  vars:
+    mde_linux_manage_repository: false
+    mde_linux_version: "{{ __release_evr }}"
+    mde_linux_onboard: "{{ __release_onboard }}"
+    mde_linux_onboarding_file: "{{ release_test_onboarding_file }}"
+    mde_linux_verify: "{{ __release_onboard }}"
+    mde_linux_verify_connectivity: "{{ release_test_verify_connectivity }}"
+    # The test VM's own enforcement level, so the real-time and EICAR checks have something to
+    # test. Empty leaves whatever policy the VM gets.
+    mde_linux_managed_config: >-
+      {{ {'antivirusEngine': {'enforcementLevel': release_test_enforcement_level}}
+         if (__release_onboard | bool and release_test_enforcement_level | length > 0) else {} }}
+    mde_linux_managed_config_mode: merge
+
+- name: Read the installed packages after the install
+  ansible.builtin.package_facts:
+
+- name: Read the service state
+  ansible.builtin.systemd_service:
+    name: mdatp
+  register: __release_service
+
+- name: Record the install checks
+  vars:
+    __release_installed: >-
+      {{ ansible_facts.packages[__release_manifest.package] | default([])
+         | map(attribute='version') | zip(ansible_facts.packages[__release_manifest.package] | default([]) | map(attribute='release'))
+         | map('join', '-') | list }}
+  ansible.builtin.set_fact:
+    __release_checks: >-
+      {{ __release_checks + [
+           {'name': 'Release version installed from Satellite',
+            'passed': __release_installed == [__release_evr],
+            'detail': 'installed: ' ~ (__release_installed | join(', ') or 'nothing')
+                      ~ ', before: ' ~ (__release_before if __release_before != '-' else 'not installed')},
+           {'name': 'Service running',
+            'passed': __release_service.status.ActiveState == 'active',
+            'detail': 'mdatp is ' ~ __release_service.status.ActiveState}
+         ] + ([{'name': 'Onboarded, licensed and healthy' ~ (', connectivity test passed' if release_test_verify_connectivity else ''),
+                'passed': true,
+                'detail': 'checked by libre_devops.mde_linux'}] if __release_onboard | bool else []) }}
+
+- name: Run the Defender checks
+  ansible.builtin.include_tasks: defender_checks.yml
+  when: __release_onboard | bool
+
+- name: Run the extra checks
+  ansible.builtin.include_tasks: "{{ release_test_extra_tasks }}"
+  when: release_test_extra_tasks | length > 0

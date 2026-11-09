@@ -1,0 +1,49 @@
+---
+# Where the RPMs go. release_test_satellite gets them first. After testing, release_mode
+# decides how they reach production:
+#   upload   upload the same files to release_prod_satellite (separate test and production
+#            Satellites)
+#   promote  promote the content views on release_test_satellite with release_promotions
+#            (one Satellite with lifecycle environments)
+release_mode: upload
+
+release_test_satellite:
+  server_url: https://satellite-test.example.com
+  organization: Example Org
+  username: svc-content
+  password: "{{ vault_release_test_satellite_password }}"
+  validate_certs: true
+  ca_path: ""
+  repositories:
+    el8: { product: Microsoft, repository: Microsoft el8 }
+    el9: { product: Microsoft, repository: Microsoft el9 }
+  content_views:
+    - name: Microsoft el8
+      lifecycle_environments: [Test]
+    - name: Microsoft el9
+      lifecycle_environments: [Test]
+
+release_prod_satellite:
+  server_url: https://satellite.example.com
+  organization: Example Org
+  username: svc-content
+  password: "{{ vault_release_prod_satellite_password }}"
+  validate_certs: true
+  ca_path: ""
+  repositories:
+    el8: { product: Microsoft, repository: Microsoft el8 }
+    el9: { product: Microsoft, repository: Microsoft el9 }
+  content_views:
+    - name: Microsoft el8
+      lifecycle_environments: [Production]
+    - name: Microsoft el9
+      lifecycle_environments: [Production]
+
+# Used when release_mode is promote.
+release_promotions:
+  - content_view: Microsoft el8
+    from: Test
+    to: [Production]
+  - content_view: Microsoft el9
+    from: Test
+    to: [Production]

@@ -1,0 +1,16 @@
+---
+# Stage 7 (optional): delete the test VMs the provision stage built, and wait until Aria
+# Automation has removed them. Leaves the inventory file: delete it, or let the next
+# provision run overwrite it.
+#
+#   just teardown --ask-vault-pass
+- name: Delete the test VMs in Aria Automation
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Delete the deployments
+      ansible.builtin.include_tasks: tasks/aria.yml
+      vars:
+        __release_aria_state: absent

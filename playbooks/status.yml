@@ -1,0 +1,20 @@
+---
+# Shows where the current release is: what was downloaded, and which stages have run.
+#
+#   just status
+- name: Show the release status
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: release
+  tasks:
+    - name: Read the manifest
+      ansible.builtin.include_tasks: tasks/read_manifest.yml
+
+    - name: Show the release
+      ansible.builtin.debug:
+        msg:
+          release: "{{ __release_description | trim }}"
+          files: "{{ __release_manifest.packages | map(attribute='filename') | list }}"
+          stages: "{{ __release_manifest.stages }}"
+          next: "{{ lookup('ansible.builtin.template', 'templates/next_step.j2') | trim }}"

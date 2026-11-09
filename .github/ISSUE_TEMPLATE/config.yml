@@ -1,0 +1,6 @@
+---
+blank_issues_enabled: false
+contact_links:
+  - name: Microsoft Defender for Endpoint on Linux documentation
+    url: https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-endpoint-linux
+    about: Questions about the agent itself, rather than these playbooks.

@@ -1,0 +1,12 @@
+---
+# What to release, and where from. One entry per RHEL version: the label ties the downloaded
+# RPM to its Satellite repository and to the test VM running that version (el8 is tested on
+# the RHEL 8 VM, and so on).
+release_package: mdatp
+release_version: latest # or an exact version, such as 101.25092.0005
+release_source_url: https://packages.microsoft.com
+release_repositories:
+  - label: el8
+    path: rhel/8/prod
+  - label: el9
+    path: rhel/9/prod

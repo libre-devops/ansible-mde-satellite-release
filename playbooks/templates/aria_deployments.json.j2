@@ -1,0 +1,6 @@
+{#- release_aria_deployments with the default catalog item filled in where an entry has none. -#}
+[
+{%- for deployment in release_aria_deployments -%}
+{{ ({'catalog_item': release_aria_catalog_item} | combine(deployment)) | to_json }}{{ ',' if not loop.last }}
+{%- endfor -%}
+]

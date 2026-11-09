@@ -1,0 +1,29 @@
+# Test report: {{ __release_description | trim }}
+
+Tested {{ __release_report.tested }}. Overall: **{{ 'PASSED' if __release_report.results.values() | rejectattr('passed') | list | length == 0 else 'FAILED' }}**.
+
+| RHEL | Test VM | Version | Onboarded | Offboarded | Result |
+|---|---|---|---|---|---|
+{% for host, result in __release_report.results | dictsort %}
+| {{ result.label | default('?') }} | {{ host }} | {{ result.version | default('?') }} | {{ 'yes' if result.onboarded | default(false) else 'no' }} | {{ 'yes' if result.offboarded | default(false) else ('n/a' if not result.onboarded | default(false) else 'NO') }} | {{ 'Passed' if result.passed else 'FAILED: ' ~ result.message }} |
+{% endfor %}
+
+{% for host, result in __release_report.results | dictsort %}
+## {{ host }}
+
+| Check | Result | Detail |
+|---|---|---|
+{% for check in result.checks | default([]) %}
+| {{ check.name }} | {{ 'Passed' if check.passed else 'FAILED' }} | {{ check.detail | string | replace('|', '/') | replace('\n', ' ') }} |
+{% else %}
+| No checks ran | FAILED | {{ result.message | default('') }} |
+{% endfor %}
+
+{% endfor %}
+## Release files
+
+| RHEL | File | SHA-256 |
+|---|---|---|
+{% for package in __release_manifest.packages %}
+| {{ package.label }} | `{{ package.filename }}` | `{{ package.checksum | default('') }}` |
+{% endfor %}

@@ -1,0 +1,13 @@
+---
+# Checks __release_target has a repository for every RHEL version in the manifest.
+- name: Check the Satellite has a repository for every RHEL version
+  ansible.builtin.assert:
+    that:
+      - item.label in __release_target.repositories
+    fail_msg: >-
+      {{ __release_target.server_url }} has no repository for {{ item.label }}. Add it under
+      repositories in the Satellite's variables.
+    quiet: true
+  loop: "{{ __release_manifest.packages }}"
+  loop_control:
+    label: "{{ item.label }}"
